@@ -4,7 +4,7 @@
 
 The [Istio docs](https://istio.io/docs/) provide comprehensive instructions for setting up Istio for a variety of environments. You will want to refer to them to understand the variety of configuration options and for more in depth explanations for the related topics. The following are concise notes based on my own experience running Istio using [Docker for Mac](https://www.docker.com/docker-mac) with [Kubernetes enabled](https://docs.docker.com/docker-for-mac/#kubernetes), and basically meant to be a guide for demo purposes. Others may find this streamlined format useful as well.
 
-> Warning: the official docs for 0.8.0 are not entirely up-to-date. In particular, there are a number of errors in the Telemetry section. The steps in this guide have been verified to work.
+> Warning: the official docs for 0.8.0 and the latest 1.0.0 snapshot are not entirely up-to-date. In particular, there are a number of errors in the Telemetry section. The steps in this guide have been verified to work and there are a few updates to relevant manifests.
 
 To keep this concise, the setup is based on installing Istio
 
@@ -47,15 +47,18 @@ Server Version: v1.10.3
 
 ## Install Istio
 
-Download the latest release from the [Istio release](https://github.com/istio/istio/releases) page and unarchive it, or run the following command which will do both:
+Note: there are more options than described here. This is a simple set up on a local machine setup without TLS and without using Helm (and Tiller).
+See [this page](https://istio.io/docs/setup/kubernetes/quick-start/) for more quick start options.
+
+The following will download and unarchive the latest release version (`0.0.8`):
 
      curl -L https://git.io/getLatestIstio | sh -
+
+If you prefer to download the latest pre-release version (`1.0.0`), you will need to get it from the [Istio releases](https://github.com/istio/istio/releases) page and unarchive it yourself.
 
 Change directory to the new istio-&lt;VERSION&gt; directory just created:
 
     $ cd istio-0.8.0
-
-We will work out of this directory for the remaining setup and for running Istio samples.
 
 Add the `istioctl` client to your path:
 
