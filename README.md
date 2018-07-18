@@ -114,9 +114,15 @@ servicegraph-5849b7d696-5ckvm              1/1       Running     0          2h
 
 #### Label namespaces for automatic sidecar injection
 
-The envoy proxy is automatically injected in pods running in namespaces that are labeled with `istio-injection=enabled`. Go ahead and do this for the `default` namespace and remember to do it if you deploy an application in any other namespace you create.
+Istio uses Envoy as a sidecar proxy for each pod; it can be automatically injected in pods running in namespaces that are labeled with `istio-injection=enabled`. Go ahead and do this for the `default` namespace and remember to do this as well for any other namespaces you create if you want automatic sidecar injection.
 
     $ kubectl label namespace default istio-injection=enabled
+
+Note: If you choose not to enable automatic sidecar injection, then you will need to inject sidecars manually
+for application containers. For the bookinfo sample below, you will need to start the application using
+the following command instead of the one indicated in step 1:
+
+    $ kubectl apply -f <(istioctl kube-inject -f samples/bookinfo/kube/bookinfo.yaml)
 
 #### Removing Istio components
 
@@ -129,6 +135,10 @@ The following will delete the `istio-system` namespace and resources under it (y
 In the following steps, `make` is used for convenience during demonstration, but the actual commands used are also displayed.
 
 #### 1. Deploy the bookinfo services.
+
+Note: if you did not enable automatic sidecar injection, then see the note in the section above
+("Label namespaces for automatic sidecar injection") to start the application with manual sidecar
+injection. Otherwise, perform the following:
 
 ```sh
 $ make apply-bookinfo
@@ -145,16 +155,69 @@ service "productpage" created
 deployment.extensions "productpage-v1" created
 ```
 
-#### 2. Define an ingress gateway to the productpage service for the bookinfo application.
+The manifest that was applied defines the following 4 services:
+* productpage
+* details
+* ratings
+* reviews
 
-```sh
-$ make create-ingress
-./istio-0.8.0/bin/istioctl create -f ./istio-0.8.0/samples/bookinfo/routing/bookinfo-gateway.yaml
-Created config gateway/default/bookinfo-gateway at revision 83509
-Created config virtual-service/default/bookinfo at revision 83510
+For each of these, there is a corresponding Service and Deployment configuration. For example,
+`productpage` is configured as shown below:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: productpage
+  labels:
+    app: productpage
+spec:
+  ports:
+  - port: 9080
+    name: http
+  selector:
+    app: productpage
 ```
 
-#### 3. Confirm the services and pods are correctly defined and running.
+This defines a Service listening on port `9080` that will be associated with the pods identified
+by `.spec.selector.app` as `productpage`. A Service is the abstraction used by Kubernetes to provide
+an address (cluster IP) that will be used by service clients that is independent of the individual
+addresses of pods comprising the service.
+
+For each Service, there is a corresponding Deployment:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: productpage-v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: productpage
+  template:
+    metadata:
+      labels:
+        app: productpage
+        version: v1
+    spec:
+      containers:
+      - name: productpage
+        image: istio/examples-bookinfo-productpage-v1:1.5.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9080
+```
+
+In a nutshell, this Deployment spec defines a desired state, 
+`.spec.selector.matchLabels.app` configures the deployment controller to only target
+pods identified by the matching label to achieve and maintain the desired state. In this
+case, the desired state is a single replica of a pod specified by the pod creation spec
+in `.spec.template.spec`, which, among other things, identifies the image to use and the
+port to open for use by the pod.
+
+#### 2. Confirm the services and pods are correctly defined and running.
 
 ```sh
 $ make verify-bookinfo
@@ -175,6 +238,18 @@ reviews-v2-8cb9489c6-qm8jh        2/2       Running   0          6m
 reviews-v3-6bc884b456-nt57h       2/2       Running   0          6m
 ```
 
+Note that each pod shows 2/2 containers running because each also has a proxy running in it
+as a container sidecar.
+
+#### 3. Define an ingress gateway to the productpage service for the bookinfo application.
+
+```sh
+$ make create-ingress
+./istio-0.8.0/bin/istioctl create -f ./istio-0.8.0/samples/bookinfo/routing/bookinfo-gateway.yaml
+Created config gateway/default/bookinfo-gateway at revision 83509
+Created config virtual-service/default/bookinfo at revision 83510
+```
+
 #### 4. Determine the ingress IP and port.
 
 ```sh
@@ -183,30 +258,31 @@ kubectl get svc istio-ingressgateway -n istio-system
 NAME                   TYPE           CLUSTER-IP      EXTERNAL-IP   PORT(S)                                      AGE
 istio-ingressgateway   LoadBalancer   10.103.53.179   localhost     80:31380/TCP,443:31390/TCP,31400:31400/TCP   29m
 
-Use the information to set GATEWAY_URL (export GATEWAY_URL=host:port). If the port is 80, then leave it off.
-For more details, see: https://istio.io/docs/tasks/traffic-management/ingress/#determining-the-ingress-ip-and-ports
-```
-
 #### 5. Set `GATEWAY_URL`. For example, using the information displayed above:
+
+Using `EXTERNAL-IP` and the appropriate `PORT` printed in the previous step, set an environment variable
+called `GATEWAY_URL` as follows (if the port is 80, then leave it off). For more details, see: https://istio.io/docs/tasks/traffic-management/ingress/#determining-the-ingress-ip-and-ports
+```
 
 ```sh
 export GATEWAY_URL=localhost
 ```
 
-#### 6. Confirm the bookinfo application is running. Use `curl` to get the HTTP response status code:
+#### 6. Get the bookinfo application productpage using `curl` and print the HTTP response status code:
 
 ```sh
 $ make curl-bookinfo
 curl -o /dev/null -sw "%{http_code}\n" http://localhost/productpage
 200
 
-Visit the application and reload several times (shows all versions):
+Repeat this command or browse to the bookinfo productpage and reload several times (should cycle through 3 different versions):
 http://localhost/productpage
 ```
 
-#### 7. Visit the productpage
+#### 7. Browse to the productpage
 
-Substitute `localhost` with the actual ingress IP and port value (`GATEWAY_URL` determined above), as necessary.
+Use the URL printed at the end of the previous step to open the productpage in a browser.
+The URL uses the host:port values previously set for `$GATEWAY_URL`. For example:
 
 http://localhost/productpage
 
@@ -228,6 +304,49 @@ Visit the application and reload several times (shows only v1 - no ratings):
 http://localhost/productpage
 ```
 
+The `route-rule-all-v1.yaml` manifest defines the following for each service:
+* VirtualService
+* DestinationRule
+
+Using `reviews` as an example, this is how the VirtualService is defined:
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: ratings
+spec:
+  hosts:
+  - ratings
+  http:
+  - route:
+    - destination:
+        host: ratings
+        subset: v1
+```
+
+And this is how the DestinationRule is defined. Note that `reviews` defines 3 different subsets
+for each different version of the service:
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: reviews
+spec:
+  host: reviews
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  - name: v2
+    labels:
+      version: v2
+  - name: v3
+    labels:
+      version: v3
+```
+
 #### 9. Set routing to v2 for user "jason"
 
 ```sh
@@ -237,6 +356,31 @@ Updated config virtual-service/default/reviews to revision 91198
 
 Visit the application and log in as 'jason' (will now see v2 - ratings):
 http://localhost/productpage
+```
+
+This step updates the routing rule for the `reviews` VirtualService using `istioctl update` to apply the following:
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: reviews
+spec:
+  hosts:
+    - reviews
+  http:
+  - match:
+    - headers:
+        cookie:
+          regex: "^(.*?;)?(user=jason)(;.*)?$"
+    route:
+    - destination:
+        host: reviews
+        subset: v2
+  - route:
+    - destination:
+        host: reviews
+        subset: v1
 ```
 
 #### 10. Create fault injection rule using HTTP delay

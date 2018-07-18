@@ -1,4 +1,4 @@
-ISTIO=./istio-0.8.0
+ISTIO=./istio-1.0.0-snapshot.0
 ISTIOCTL=$(ISTIO)/bin/istioctl
 GATEWAY_URL ?= localhost
 
@@ -27,14 +27,14 @@ apply-bookinfo:
 
 # step 5
 # ======================
-create-ingress:
-	$(ISTIOCTL) create -f $(ISTIO)/samples/bookinfo/routing/bookinfo-gateway.yaml
-
-# step 6
-# ======================
 verify-bookinfo:
 	kubectl get svc
 	kubectl get pod
+
+# step 6
+# ======================
+create-ingressgateway:
+	$(ISTIOCTL) create -f $(ISTIO)/samples/bookinfo/routing/bookinfo-gateway.yaml
 
 # step 7
 # ======================
@@ -45,9 +45,9 @@ get-ingressgateway:
 
 # step 8
 # ======================
-curl-bookinfo:
+check-productpage:
 	curl -o /dev/null -sw "%{http_code}\n" http://${GATEWAY_URL}/productpage
-	@printf "\nVisit the application and reload several times (shows all versions):\nhttp://${GATEWAY_URL}/productpage\n"
+	@printf "\nRepeat this command or browse to the bookinfo productpage and reload several times (should cycle through 3 different versions):\nhttp://${GATEWAY_URL}/productpage\n"
 
 # step 9
 # ======================
